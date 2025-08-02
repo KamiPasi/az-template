@@ -1,0 +1,139 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "accounts_dsadsa_name": {
+            "defaultValue": "dsadsa",
+            "type": "String"
+        },
+        "location_ds_name": {
+            "defaultValue": "eastus",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.CognitiveServices/accounts",
+            "apiVersion": "2025-06-01",
+            "name": "[parameters('accounts_dsadsa_name')]",
+            "location": "[parameters('location_ds_name')]",
+            "sku": {
+                "name": "S0"
+            },
+            "kind": "AIServices",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "apiProperties": {},
+                "customSubDomainName": "[parameters('accounts_dsadsa_name')]",
+                "networkAcls": {
+                    "defaultAction": "Allow",
+                    "virtualNetworkRules": [],
+                    "ipRules": []
+                },
+                "allowProjectManagement": true,
+                "defaultProject": "[parameters('accounts_dsadsa_name')]",
+                "associatedProjects": [
+                    "[parameters('accounts_dsadsa_name')]"
+                ],
+                "publicNetworkAccess": "Enabled"
+            }
+        },
+        {
+            "type": "Microsoft.CognitiveServices/accounts/defenderForAISettings",
+            "apiVersion": "2025-06-01",
+            "name": "[concat(parameters('accounts_dsadsa_name'), '/Default')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('accounts_dsadsa_name'))]"
+            ],
+            "properties": {
+                "state": "Disabled"
+            }
+        },
+        {
+            "type": "Microsoft.CognitiveServices/accounts/deployments",
+            "apiVersion": "2025-06-01",
+            "name": "[concat(parameters('accounts_dsadsa_name'), '/deepseek-r1-0528')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('accounts_dsadsa_name'))]"
+            ],
+            "sku": {
+                "name": "GlobalStandard",
+                "capacity": 5000
+            },
+            "properties": {
+                "model": {
+                    "format": "DeepSeek",
+                    "name": "DeepSeek-R1-0528",
+                    "version": "1"
+                },
+                "versionUpgradeOption": "OnceNewDefaultVersionAvailable",
+                "currentCapacity": 5000,
+                "raiPolicyName": "Microsoft.Nil"
+            }
+        },
+        {
+            "type": "Microsoft.CognitiveServices/accounts/deployments",
+            "apiVersion": "2025-06-01",
+            "name": "[concat(parameters('accounts_dsadsa_name'), '/deepseek-v3-0324')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('accounts_dsadsa_name'))]"
+            ],
+            "sku": {
+                "name": "GlobalStandard",
+                "capacity": 5000
+            },
+            "properties": {
+                "model": {
+                    "format": "DeepSeek",
+                    "name": "DeepSeek-V3-0324",
+                    "version": "1"
+                },
+                "versionUpgradeOption": "OnceNewDefaultVersionAvailable",
+                "currentCapacity": 5000,
+                "raiPolicyName": "Microsoft.Nil"
+            }
+        },
+        {
+            "type": "Microsoft.CognitiveServices/accounts/deployments",
+            "apiVersion": "2025-06-01",
+            "name": "[concat(parameters('accounts_dsadsa_name'), '/grok-3')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('accounts_dsadsa_name'))]"
+            ],
+            "sku": {
+                "name": "GlobalStandard",
+                "capacity": 400
+            },
+            "properties": {
+                "model": {
+                    "format": "xAI",
+                    "name": "grok-3",
+                    "version": "1"
+                },
+                "versionUpgradeOption": "OnceNewDefaultVersionAvailable",
+                "currentCapacity": 400,
+                "raiPolicyName": "Microsoft.Nil"
+            }
+        },
+        {
+            "type": "Microsoft.CognitiveServices/accounts/projects",
+            "apiVersion": "2025-06-01",
+            "name": "[concat(parameters('accounts_dsadsa_name'), '/', parameters('accounts_dsadsa_name'))]",
+            "location": "[parameters('location_ds_name')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', parameters('accounts_dsadsa_name'))]"
+            ],
+            "kind": "AIServices",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "description": "Default project created with the resource",
+                "displayName": "dsadsa"
+            }
+        }
+    ]
+}
