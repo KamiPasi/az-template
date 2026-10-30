@@ -3,6 +3,9 @@
 # 依赖 Bash、Azure CLI、jq；独立运行，不读取 support_dict.json，也不提交 ARM 模板。
 # 修改下面的配置，或使用环境变量：
 # DEPLOY_NAME=my-foundry REGIONS="spaincentral swedencentral" bash az_deploy_foundry.sh
+# DEPLOY_NAME=my-foundry bash az_deploy_foundry.sh --models gpt-5.6-sol,gpt-6-astra
+# DEPLOY_NAME=my-foundry MODELS="gpt-5.6-sol gpt-6-astra" bash az_deploy_foundry.sh
+# bash az_deploy_foundry.sh --list-models 可查看全部可选部署名。
 # 同名旧 OpenAI 资源需要先升级为 Foundry，或更换 DEPLOY_NAME 新建。
 # 执行结束后集中打印本次账号的 URL 和密钥，并保存到 foundry_keys.txt / foundry_keys.jsonl。
 # https://learn.microsoft.com/cli/azure/use-azure-cli-rest-command
@@ -15,6 +18,7 @@ umask 077
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_NAME="${DEPLOY_NAME:-your-deploy-prefix}"
 REGIONS="${REGIONS:-spaincentral}"              # 多区域用空格分隔，填写 Azure 区域代码。
+MODELS="${MODELS-gpt-5.4,gpt-5.5,gpt-5.6-sol,gpt-6-astra}" # 逗号或空白分隔；--models 优先。
 SUBSCRIPTION_ID="${SUBSCRIPTION_ID:-}"           # 留空使用 az login 后当前选中的订阅。
 RESOURCE_GROUP="${RESOURCE_GROUP:-azure}"
 GROUP_LOCATION="${GROUP_LOCATION:-eastus2}"
@@ -26,13 +30,47 @@ MAX_RETRIES=3
 API_VERSION="2026-07-01"
 ARM="https://management.azure.com"
 
-# 部署名/模型名 | 版本 | SKU 容量。所有区域均只部署这 4 项，统一 GlobalStandard。
-MODEL_SPECS=(
-    "gpt-5.4|2026-03-05|250"
-    "gpt-5.5|2026-04-24|1000"
-    "gpt-5.6-sol|2026-07-09|250"
-    "gpt-6-astra|2026-09-03|250"
+# 参考 support_dict.json 的 empty3（2026-10-31），按部署名合并各区域的相同配置。
+# 部署名 | 模型名 | 版本 | SKU | 容量。-dz 是部署名后缀，不属于 Azure 模型名。
+# 每个 REGIONS 区域均尝试所选部署项；实际区域支持和配额由 Azure 校验。
+MODEL_CATALOG=(
+    "gpt-4.1-mini|gpt-4.1-mini|2025-04-14|GlobalStandard|5000"
+    "gpt-4.1-mini-dz|gpt-4.1-mini|2025-04-14|DataZoneStandard|2000"
+    "gpt-4o|gpt-4o|2024-11-20|GlobalStandard|450"
+    "gpt-4o-dz|gpt-4o|2024-11-20|DataZoneStandard|300"
+    "gpt-5-mini|gpt-5-mini|2025-08-07|GlobalStandard|1000"
+    "gpt-5-mini-dz|gpt-5-mini|2025-08-07|DataZoneStandard|300"
+    "gpt-5.1|gpt-5.1|2025-11-13|GlobalStandard|250"
+    "gpt-5.1-dz|gpt-5.1|2025-11-13|DataZoneStandard|100"
+    "gpt-5.2|gpt-5.2|2025-12-11|GlobalStandard|250"
+    "gpt-5.2-dz|gpt-5.2|2025-12-11|DataZoneStandard|100"
+    "gpt-5.4|gpt-5.4|2026-03-05|GlobalStandard|250"
+    "gpt-5.4-dz|gpt-5.4|2026-03-05|DataZoneStandard|100"
+    "gpt-5.4-mini|gpt-5.4-mini|2026-03-17|GlobalStandard|1000"
+    "gpt-5.4-nano|gpt-5.4-nano|2026-03-17|GlobalStandard|5000"
+    "gpt-5.4-nano-dz|gpt-5.4-nano|2026-03-17|DataZoneStandard|2000"
+    "gpt-5.5|gpt-5.5|2026-04-24|GlobalStandard|1000"
+    "gpt-5.5-dz|gpt-5.5|2026-04-24|DataZoneStandard|333"
+    "gpt-5.6-luna|gpt-5.6-luna|2026-07-09|GlobalStandard|250"
+    "gpt-5.6-luna-dz|gpt-5.6-luna|2026-07-09|DataZoneStandard|100"
+    "gpt-5.6-sol|gpt-5.6-sol|2026-07-09|GlobalStandard|250"
+    "gpt-5.6-sol-dz|gpt-5.6-sol|2026-07-09|DataZoneStandard|100"
+    "gpt-5.6-terra|gpt-5.6-terra|2026-07-09|GlobalStandard|250"
+    "gpt-5.6-terra-dz|gpt-5.6-terra|2026-07-09|DataZoneStandard|100"
+    "gpt-6-astra|gpt-6-astra|2026-09-03|GlobalStandard|250"
+    "gpt-6-astra-dz|gpt-6-astra|2026-09-03|DataZoneStandard|100"
+    "gpt-6-luna|gpt-6-luna|2026-09-22|GlobalStandard|250"
+    "gpt-6-luna-dz|gpt-6-luna|2026-09-22|DataZoneStandard|100"
+    "gpt-6-sol|gpt-6-sol|2026-09-22|GlobalStandard|250"
+    "gpt-6-sol-dz|gpt-6-sol|2026-09-22|DataZoneStandard|100"
+    "gpt-6.1-sol|gpt-6.1-sol|2026-09-29|GlobalStandard|250"
+    "gpt-6.1-sol-dz|gpt-6.1-sol|2026-09-29|DataZoneStandard|100"
+    "gpt-image-1|gpt-image-1|2025-04-15|GlobalStandard|3"
+    "gpt-image-1.5|gpt-image-1.5|2025-12-16|GlobalStandard|9"
+    "gpt-image-1.5-dz|gpt-image-1.5|2025-12-16|DataZoneStandard|3"
+    "gpt-image-2|gpt-image-2|2026-04-21|GlobalStandard|2"
 )
+MODEL_SPECS=()
 
 ARM_RESPONSE="{}"
 LAST_ERROR=""
@@ -46,6 +84,59 @@ KEY_SUMMARY=()
 log() { printf '%s\n' "$*" >&2; }
 fail() { LAST_ERROR="$*"; log "错误：$LAST_ERROR"; return 1; }
 uri() { jq -rn --arg value "$1" '$value | @uri'; }
+
+usage() {
+    cat <<'EOF'
+用法：DEPLOY_NAME=my-foundry bash az_deploy_foundry.sh [选项]
+
+  --models, -m LIST  仅部署指定模型，使用逗号或空白分隔（空白列表需加引号）。
+  --list-models     列出可选部署名、模型名、版本、SKU 和容量，不调用 Azure。
+  --help, -h        显示帮助。
+
+未指定 --models 时读取 MODELS 环境变量；二者都未设置时部署原有四个模型：
+gpt-5.4,gpt-5.5,gpt-5.6-sol,gpt-6-astra。
+同一列表应用于 REGIONS 的每个区域；重复名称只部署一次，未知名称或空列表报错。
+可选项来自 support_dict.json 的 empty3 快照，运行时无需该文件。
+-dz 部署项使用 DataZoneStandard；实际区域支持及配额由 Azure 校验。
+
+示例：
+  DEPLOY_NAME=my-foundry bash az_deploy_foundry.sh --models gpt-5.6-sol,gpt-6-astra
+  DEPLOY_NAME=my-foundry MODELS="gpt-6.1-sol gpt-image-2" REGIONS=swedencentral bash az_deploy_foundry.sh
+EOF
+}
+
+list_models() {
+    local spec deployment model version sku capacity
+    printf '%s\t%s\t%s\t%s\t%s\n' '部署名（--models）' '模型名' '版本' 'SKU' '容量'
+    for spec in "${MODEL_CATALOG[@]}"; do
+        IFS='|' read -r deployment model version sku capacity <<<"$spec"
+        printf '%s\t%s\t%s\t%s\t%s\n' "$deployment" "$model" "$version" "$sku" "$capacity"
+    done
+}
+
+select_models() {
+    local model spec found
+    local -a requested=() selected=()
+    read -r -a requested <<<"$(printf '%s' "$MODELS" | tr ',[:space:]' ' ')"
+    (( ${#requested[@]} > 0 )) || { log "模型列表不能为空，请使用 --models 或 MODELS 指定模型。"; return 1; }
+    MODEL_SPECS=()
+    for model in "${requested[@]}"; do
+        [[ " ${selected[*]} " != *" $model "* ]] || continue
+        found=false
+        for spec in "${MODEL_CATALOG[@]}"; do
+            [[ "${spec%%|*}" == "$model" ]] || continue
+            MODEL_SPECS+=("$spec")
+            selected+=("$model")
+            found=true
+            break
+        done
+        if [[ "$found" == false ]]; then
+            log "未知模型：$model；请运行 bash az_deploy_foundry.sh --list-models 查看可选部署名。"
+            return 1
+        fi
+    done
+    log "本次部署模型：${selected[*]}"
+}
 
 # az rest 自动复用 Azure CLI 登录凭据。仅明确的资源不存在返回 4，权限错误不能当作不存在。
 arm_request() {
@@ -148,7 +239,7 @@ require_foundry() {
 }
 
 deploy_region() {
-    local region="$1" suffix name account url body rc endpoint spec model version capacity key models_json
+    local region="$1" suffix name account url body rc endpoint spec deployment model version sku capacity key models_json
     local -a successful_models=()
     suffix="$(printf '%s' "$region" | tr 'abcdefghijklmnopqrstuvwxyz0123456789' 'qwertyuiopasdfghjklzxcvbnm5790241368')"
     name="$DEPLOY_NAME-$suffix"
@@ -199,20 +290,20 @@ deploy_region() {
 
     STAGE=model
     for spec in "${MODEL_SPECS[@]}"; do
-        IFS='|' read -r model version capacity <<<"$spec"
-        CURRENT_RESOURCE="$model"
-        log "部署模型：$model，版本：$version，GlobalStandard 容量：$capacity"
-        body="$(jq -cn --arg model "$model" --arg version "$version" --argjson capacity "$capacity" '{
-            sku:{name:"GlobalStandard",capacity:$capacity},
+        IFS='|' read -r deployment model version sku capacity <<<"$spec"
+        CURRENT_RESOURCE="$deployment"
+        log "部署模型：$deployment（$model），版本：$version，$sku 容量：$capacity"
+        body="$(jq -cn --arg model "$model" --arg version "$version" --arg sku "$sku" --argjson capacity "$capacity" '{
+            sku:{name:$sku,capacity:$capacity},
             properties:{model:{format:"OpenAI",name:$model,version:$version},
                 versionUpgradeOption:"OnceCurrentVersionExpired",raiPolicyName:"Microsoft.Nil"}
         }')" || return 1
-        url="$account/deployments/$model?api-version=$API_VERSION"
-        if arm_request PUT "$url" "$body" && wait_ready "$url" "模型 $region/$model"; then
-            successful_models+=("$model")
+        url="$account/deployments/$(uri "$deployment")?api-version=$API_VERSION"
+        if arm_request PUT "$url" "$body" && wait_ready "$url" "模型 $region/$deployment"; then
+            successful_models+=("$deployment")
             MODEL_SUCCESSES=$((MODEL_SUCCESSES + 1))
         else
-            # 当前区域不支持模型或配额不足时记录失败，继续尝试余下的固定模型。
+            # 当前区域不支持模型或配额不足时记录失败，继续尝试余下的所选模型。
             record_failure "$region"
         fi
     done
@@ -237,6 +328,19 @@ deploy_region() {
 main() {
     local command login region account_name
     local -a subscription_args=() regions=()
+    while (( $# > 0 )); do
+        case "$1" in
+            --models|-m)
+                (( $# >= 2 )) && [[ "$2" != -* ]] || { log "$1 需要模型列表参数。"; return 1; }
+                MODELS="$2"
+                shift 2 ;;
+            --models=*) MODELS="${1#*=}"; shift ;;
+            --list-models) list_models; return 0 ;;
+            --help|-h) usage; return 0 ;;
+            *) log "未知参数：$1"; usage >&2; return 1 ;;
+        esac
+    done
+    select_models || return 1
     for command in az jq; do
         command -v "$command" >/dev/null 2>&1 || { log "缺少命令：$command"; return 1; }
     done
@@ -291,4 +395,4 @@ main() {
     fi
 }
 
-main
+main "$@"
