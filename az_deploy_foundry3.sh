@@ -28,7 +28,7 @@ ARM="https://management.azure.com"
 
 # 部署名/模型名 | 版本 | SKU 容量。所有区域均只部署这 4 项，统一 GlobalStandard。
 MODEL_SPECS=(
-    "gpt-6.1-sol|2026-09-29|1000"
+    "gpt-6.1-sol|2026-09-29|250"
     "gpt-5.6-sol|2026-07-09|250"
     "gpt-6-astra|2026-09-03|250"
 )
